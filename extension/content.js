@@ -204,6 +204,7 @@
       const res = await fetchIdealo(`${IDEALO}/price-chart/sites/1/products/${info.id}/history?period=3M`);
       info.status = res.status;
       info.ok = res.ok;
+      info.via = res.via;
       info.start = String(res.html || '').slice(0, 80);
     } catch (err) {
       info.error = err.message;

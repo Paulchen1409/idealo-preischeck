@@ -139,11 +139,85 @@ const headerRuleReady = chrome.declarativeNetRequest.updateSessionRules({
         { header: 'sec-fetch-site', operation: 'set', value: 'same-origin' },
       ],
     },
-    condition: { urlFilter: '||www.idealo.de/', tabIds: [-1], resourceTypes: ['xmlhttprequest', 'other'] },
+    // excludedInitiatorDomains: Anfragen aus dem idealo-Rahmen (idealo-frame.js) bleiben unverändert
+    condition: { urlFilter: '||www.idealo.de/', tabIds: [-1], excludedInitiatorDomains: ['www.idealo.de'],
+                 resourceTypes: ['xmlhttprequest', 'other'] },
   }],
 }).catch((err) => console.warn('[Idealo-Preischeck] Header-Regel nicht gesetzt:', err));
 
+// ---------- Preisverlauf über einen idealo.de-Rahmen ----------
+// Gemessen in Brave: /price-chart/ antwortet Anfragen aus der Erweiterung mit einem leeren 404 – auch mit
+// angepassten Headern. Ein unsichtbares Offscreen-Dokument lädt deshalb https://www.idealo.de/robots.txt
+// in einen Rahmen; idealo-frame.js holt dort die Daten als echte same-origin-Anfrage.
+let framePort = null;
+let frameWaiters = [];
+let frameSeq = 0;
+const framePending = new Map(); // id → resolve
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'idealo-frame' || port.sender?.id !== chrome.runtime.id) return;
+  if (!String(port.sender.url || '').startsWith('https://www.idealo.de/')) return;
+  framePort = port;
+  frameWaiters.splice(0).forEach((resolve) => resolve(port));
+  port.onMessage.addListener((msg) => {
+    const resolve = framePending.get(msg?.id);
+    if (resolve) { framePending.delete(msg.id); resolve(msg); }
+  });
+  port.onDisconnect.addListener(() => {
+    if (framePort === port) framePort = null;
+    for (const [id, resolve] of framePending) resolve({ id, error: 'Rahmen getrennt' });
+    framePending.clear();
+  });
+});
+
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument?.()) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['IFRAME_SCRIPTING'],
+      justification: 'Preisverlauf von idealo.de laden (der Dienst antwortet nur Anfragen von idealo.de)',
+    });
+  } catch (err) {
+    if (!/single offscreen|already/i.test(err.message)) throw err; // parallel schon angelegt → ok
+  }
+}
+
+async function getFramePort() {
+  if (framePort) return framePort;
+  await ensureOffscreen();
+  if (framePort) return framePort;
+  return new Promise((resolve, reject) => {
+    frameWaiters.push(resolve);
+    setTimeout(() => reject(new Error('idealo-Rahmen lädt nicht')), 8000);
+  });
+}
+
+async function fetchViaFrame(url) {
+  const port = await getFramePort();
+  const id = ++frameSeq;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { framePending.delete(id); resolve({ error: 'Zeitüberschreitung im idealo-Rahmen' }); }, 15000);
+    framePending.set(id, (msg) => { clearTimeout(timer); resolve(msg); });
+    port.postMessage({ id, url });
+  });
+}
+
 async function doFetch(url) {
+  if (isPriceChart(url)) {
+    try {
+      const r = await fetchViaFrame(url);
+      if (!r.error) {
+        const response = { ok: r.ok, status: r.status, url: r.url, html: r.html, via: 'idealo-Rahmen' };
+        toCache(url, response);
+        return response;
+      }
+      console.warn('[Idealo-Preischeck] Rahmen:', r.error);
+    } catch (err) {
+      console.warn('[Idealo-Preischeck] Rahmen:', err.message);
+    }
+    // sonst: direkter Versuch wie bisher
+  }
   try {
     await headerRuleReady;
     const res = await fetch(url, { credentials: 'include', headers: { Accept: 'text/html,application/json' } });
@@ -153,7 +227,7 @@ async function doFetch(url) {
       cooldownUntil = Math.max(cooldownUntil, Date.now() + COOLDOWN_MS[res.status]);
       return THROTTLED;
     }
-    const response = { ok: res.ok, status: res.status, url: res.url, html: await res.text() };
+    const response = { ok: res.ok, status: res.status, url: res.url, html: await res.text(), via: 'direkt' };
     toCache(url, response);
     return response;
   } catch (err) {
