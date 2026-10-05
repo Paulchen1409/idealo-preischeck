@@ -3,7 +3,7 @@
 
 const DEFAULTS = {
   sort: 'total', count: 5, freeShipOnly: false, autoload: true,
-  showButton: true, autoCheck: true, searchLabels: true, cartCheck: true,
+  showButton: true, autoCheck: true, searchLabels: true, cartCheck: true, primeCheck: true,
 };
 
 // Eingebettet als Panel auf der Amazon-Seite (statt als Erweiterungs-Popup)?
@@ -46,6 +46,7 @@ async function loadSettings() {
   $('set-autocheck').checked = settings.autoCheck;
   $('set-searchlabels').checked = settings.searchLabels;
   $('set-cartcheck').checked = settings.cartCheck;
+  $('set-primecheck').checked = settings.primeCheck;
 }
 async function saveSettings() {
   settings = {
@@ -57,6 +58,7 @@ async function saveSettings() {
     autoCheck: $('set-autocheck').checked,
     searchLabels: $('set-searchlabels').checked,
     cartCheck: $('set-cartcheck').checked,
+    primeCheck: $('set-primecheck').checked,
   };
   $('sort-inline').value = settings.sort;
   await chrome.storage.sync.set(settings);
@@ -313,7 +315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('version').textContent = `Version ${chrome.runtime.getManifest().version}`;
 
   $('btn-settings').addEventListener('click', () => $('settings').classList.toggle('hidden'));
-  ['set-sort', 'set-count', 'set-freeship', 'set-autoload', 'set-showbutton', 'set-autocheck', 'set-searchlabels', 'set-cartcheck'].forEach((id) =>
+  ['set-sort', 'set-count', 'set-freeship', 'set-autoload', 'set-showbutton', 'set-autocheck', 'set-searchlabels', 'set-cartcheck', 'set-primecheck'].forEach((id) =>
     $(id).addEventListener('change', saveSettings));
 
   if (EMBED) {

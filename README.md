@@ -1,7 +1,8 @@
 # Idealo-Preischeck für Amazon
 
 Chrome-Erweiterung, die Amazon-Preise mit Idealo vergleicht: Button und Preisverlauf auf Produktseiten,
-Etiketten in der Suche, Spar-Check im Warenkorb. Technische Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md).
+Etiketten in der Suche, Spar-Check im Warenkorb – und ein Prime-Check, ob sich Warten bis zum nächsten
+Prime Day / den Prime Deal Days lohnt. Technische Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md).
 
 ## Installation unter Windows (ohne Web Store)
 

@@ -18,7 +18,7 @@
   if (window.top !== window) return;
   if (!/^\/(gp\/cart|cart)/.test(location.pathname)) return;
 
-  const DEFAULTS = { cartCheck: true, sort: 'total', freeShipOnly: false };
+  const DEFAULTS = { cartCheck: true, primeCheck: true, sort: 'total', freeShipOnly: false };
   const ROW_SEL = '[data-name="Active Items"] [data-asin][data-itemtype="active"]';
   const ROW_SEL_FALLBACK = '[data-asin][data-itemtype="active"]';
   const THROTTLE_PAUSE_MS = 65 * 1000;
@@ -37,6 +37,13 @@
   let ui = {};
   let detailsOpen = false;
   let port = null;
+  let primeOpen = false;
+
+  // Prime-Check: Analyse je Idealo-Produkt (Preisverlauf 2 Jahre → Prime-Rabatte), siehe prime.js
+  const PRIME_TTL_MS = 12 * 60 * 60 * 1000;
+  const primeData = new Map();   // idealo-ID → { status: 'pending'|'loading'|'done'|'error', analysis }
+  const primeQueue = [];
+  let primeWorking = false;
 
   const fmt = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -182,6 +189,7 @@
           item.result = await checkItem(item, isRefresh);
           item.status = 'done';
           item.stale = false;
+          schedulePrime(item);
         } catch (err) {
           if (/bremst/.test(err.message)) {
             // Idealo bremst: Artikel zurück an den Anfang, Pause, dann weiter
@@ -261,6 +269,7 @@
     if (hit && usable(hit.data)) {
       item.result = hit.data;
       item.status = 'done';
+      schedulePrime(item);
       item.stale = hit.age > FRESH_MS;
       if (item.stale) enqueueRefresh(item.asin);
       render();
@@ -314,6 +323,113 @@
     if (mutations.every((m) => ownNode(m.target) || [...m.addedNodes, ...m.removedNodes].every(ownNode))) return;
     scheduleReconcile();
   });
+
+  // ---------- Prime-Check: Preisverläufe holen ----------
+
+  /** Idealo-IDs eines Artikels (bei Bündeln die der Teile) */
+  function idealoIdsOf(item) {
+    const r = item.result;
+    if (!r) return [];
+    if (r.state === 'bundle') return r.components.map((c) => productIdFromUrl(c.res?.productUrl)).filter(Boolean);
+    return r.state === 'found' ? [productIdFromUrl(r.productUrl)].filter(Boolean) : [];
+  }
+
+  function schedulePrime(item) {
+    if (!settings.primeCheck) return;
+    for (const id of idealoIdsOf(item)) {
+      if (primeData.has(id)) continue;
+      primeData.set(id, { status: 'pending' });
+      primeQueue.push(id);
+    }
+    primeWork();
+  }
+
+  async function primeWork() {
+    if (primeWorking) return;
+    primeWorking = true;
+    try {
+      while (primeQueue.length && settings.primeCheck) {
+        const id = primeQueue.shift();
+        const entry = primeData.get(id);
+        entry.status = 'loading';
+        render();
+        try {
+          entry.analysis = await loadPrimeAnalysis(id);
+          entry.status = 'done';
+        } catch (err) {
+          console.warn('[Idealo-Preischeck] Prime-Check:', id, err);
+          entry.status = 'error';
+          if (/bremst/.test(err.message)) { primeData.delete(id); primeQueue.push(id); await sleep(THROTTLE_PAUSE_MS); }
+        }
+        render();
+      }
+    } finally {
+      primeWorking = false;
+    }
+  }
+
+  /** Prime-Rabatte eines Produkts – 12 h in storage.local gemerkt (der Verlauf ändert sich nur täglich) */
+  async function loadPrimeAnalysis(id) {
+    const key = `prime:${id}`;
+    try {
+      const { [key]: hit } = await chrome.storage.local.get(key);
+      if (hit && Date.now() - hit.time < PRIME_TTL_MS) return hit.analysis;
+    } catch { /* ohne Speicher weiter */ }
+    let points = [];
+    try {
+      const res = await fetchIdealo(`${IDEALO}/price-chart/sites/1/products/${id}/history?period=2Y`, 'low');
+      if (res.ok) {
+        const json = JSON.parse(res.html);
+        points = (json.data || []).filter((d) => d && typeof d.y === 'number' && d.x).map((d) => ({ date: d.x, price: d.y / 100 }));
+      } else if (res.status !== 404) {
+        throw new Error(`Idealo antwortet mit ${res.status}`);
+      }
+    } catch (err) {
+      if (/bremst/.test(err.message)) throw err;
+      throw new Error(err.message);
+    }
+    const analysis = analyzePrimeHistory(points);
+    chrome.storage.local.set({ [key]: { time: Date.now(), analysis } }).catch(() => {});
+    return analysis;
+  }
+
+  /**
+   * Prime-Schätzung für einen Artikel: { state: 'pending'|'nodata'|'ok', saving, expected, ref, discount }
+   * saving gilt für die ganze Menge im Warenkorb.
+   */
+  function evaluatePrime(item, next) {
+    const r = item.result;
+    if (item.status !== 'done' || !r) return { state: 'pending' };
+    const ids = idealoIdsOf(item);
+    if (!ids.length) return { state: 'nodata' };
+    const entries = ids.map((id) => primeData.get(id));
+    if (entries.some((e) => !e || e.status === 'pending' || e.status === 'loading')) return { state: 'pending' };
+
+    const nextType = next?.event.type;
+    let parts;
+    if (r.state === 'bundle') {
+      parts = r.components.map((c) => {
+        const best = c.res?.state === 'found' ? computeBest(c.res.offers || [], c.res.ld, settings, null) : null;
+        return { id: productIdFromUrl(c.res?.productUrl), count: c.count, bestNow: best?.state === 'ok' ? best.value : null };
+      });
+    } else {
+      const ev = evaluate(item);
+      const candidates = [item.price, ev && !ev.missing ? ev.idealoUnit : null].filter((v) => v > 0);
+      parts = [{ id: ids[0], count: 1, bestNow: candidates.length ? Math.min(...candidates) : null }];
+    }
+
+    let saving = 0, expected = 0, ref = null, discount = 0;
+    for (const p of parts) {
+      const entry = primeData.get(p.id);
+      const est = p.bestNow && entry?.status === 'done' ? estimatePrimeSaving(p.bestNow, entry.analysis, nextType) : null;
+      if (!est) return { state: 'nodata' };
+      saving += est.saving * p.count;
+      expected += est.expected * p.count;
+      ref = ref || est.ref;
+      discount = Math.max(discount, est.ref.discount);
+    }
+    return { state: 'ok', saving: round2(saving * item.qty), expected: round2(expected), ref, discount, bundle: parts.length > 1 };
+  }
 
   // ---------- Berechnung ----------
 
@@ -406,6 +522,15 @@
     .t a:hover { color: #c7511f; text-decoration: underline; }
     .s { font-weight: 700; color: #128a3e; font-size: 12px; text-align: right; white-space: nowrap; }
     .p { color: #565959; font-size: 11px; grid-column: 1 / -1; }
+    .prime { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #d5d9d9; }
+    .ptitle { font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: #00a8e1; }
+    .pnext { font-size: 12px; margin-top: 3px; }
+    .pnext b { font-weight: 700; }
+    .pres { font-weight: 700; font-size: 14px; margin-top: 4px; }
+    .pres.good { color: #128a3e; }
+    .pres.flat { color: #565959; font-weight: 600; font-size: 13px; }
+    .pbasis { color: #6b7385; font-size: 11px; margin-top: 4px; }
+    .s.none { color: #6b7385; font-weight: 500; }
   `;
 
   const BADGE_CSS = `
@@ -441,15 +566,26 @@
             <div class="sub"></div>
             <div class="bar"><i></i></div>
             <button type="button" class="toggle"></button>
-            <ul hidden></ul>
+            <ul class="list" hidden></ul>
+            <div class="prime" hidden>
+              <div class="ptitle">Prime-Check</div>
+              <div class="pnext"></div>
+              <div class="pres"></div>
+              <div class="pbasis"></div>
+              <button type="button" class="toggle ptoggle"></button>
+              <ul class="plist" hidden></ul>
+            </div>
           </div>
         </div>`;
       ui = {
         status: root.querySelector('.status'), sub: root.querySelector('.sub'),
         bar: root.querySelector('.bar'), fill: root.querySelector('.bar > i'),
-        toggle: root.querySelector('.toggle'), list: root.querySelector('ul'),
+        toggle: root.querySelector('.toggle'), list: root.querySelector('ul.list'),
+        prime: root.querySelector('.prime'), pnext: root.querySelector('.pnext'), pres: root.querySelector('.pres'),
+        pbasis: root.querySelector('.pbasis'), ptoggle: root.querySelector('.ptoggle'), plist: root.querySelector('.plist'),
       };
       ui.toggle.addEventListener('click', () => { detailsOpen = !detailsOpen; render(); });
+      ui.ptoggle.addEventListener('click', () => { primeOpen = !primeOpen; render(); });
       root.querySelector('.rescan').addEventListener('click', rescan);
     }
     if (buyBox) buyBox.parentElement.insertBefore(bannerHost, buyBox); // direkt über der Kasse
@@ -522,8 +658,79 @@
           </li>`).join('');
     }
 
+    drawPrime();
     drawBadges();
   }
+
+  function drawPrime() {
+    if (!settings.primeCheck) { ui.prime.hidden = true; return; }
+    const next = nextPrimeEvent();
+    if (!next) { ui.prime.hidden = true; return; }
+    ui.prime.hidden = false;
+    const { event, status, inDays } = next;
+    const range = formatEventRange(event);
+
+    if (status === 'ongoing') {
+      ui.pnext.innerHTML = `<b>${esc(event.name)}</b> laufen gerade (${esc(range)})`;
+    } else if (status === 'estimated') {
+      const month = new Date(`${event.start}T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+      ui.pnext.innerHTML = `Nächstes Event: <b>${esc(event.name)}</b>, voraussichtlich ${esc(month)} (noch nicht angekündigt)`;
+    } else {
+      const when = inDays === 1 ? 'morgen' : inDays === 2 ? 'übermorgen' : `in ${inDays} Tagen`;
+      ui.pnext.innerHTML = `Nächstes Event: <b>${esc(event.name)}</b>, ${esc(range)} – <b>${when}</b>`;
+    }
+
+    const selected = [...items.values()].filter((i) => i.selected);
+    const evals = selected.map((item) => ({ item, pe: evaluatePrime(item, next) }));
+    const pending = evals.filter((e) => e.pe.state === 'pending').length;
+    const withData = evals.filter((e) => e.pe.state === 'ok');
+    const worth = withData.filter((e) => e.pe.saving >= Math.max(1, e.item.price * e.item.qty * 0.03));
+    const total = round2(worth.reduce((sum, e) => sum + e.pe.saving, 0));
+
+    if (status === 'ongoing') {
+      ui.pres.className = 'pres flat';
+      ui.pres.textContent = 'Die Preise sind gerade Prime-Preise – Warten bringt jetzt nichts mehr.';
+    } else if (pending) {
+      ui.pres.className = 'pres flat';
+      ui.pres.textContent = `Prüfe Prime-Preise … (${selected.length - pending} von ${selected.length})`;
+    } else if (!withData.length) {
+      ui.pres.className = 'pres flat';
+      ui.pres.textContent = 'Für diese Artikel gibt es keine Preisdaten vom letzten Prime-Event.';
+    } else if (total > 0) {
+      ui.pres.className = 'pres good';
+      ui.pres.textContent = `Warten lohnt sich: ca. −${fmt(total)} bei ${worth.length} von ${selected.length} Artikeln`;
+    } else {
+      ui.pres.className = 'pres flat';
+      ui.pres.textContent = 'Warten lohnt sich kaum – beim letzten Mal gab es für diese Artikel keine nennenswerten Prime-Rabatte.';
+    }
+
+    const refs = [...new Set(withData.map((e) => `${e.pe.ref.event.name} ${formatEventRange(e.pe.ref.event)}`))];
+    ui.pbasis.textContent = withData.length
+      ? `Schätzung aus den Prime-Rabatten bei den ${refs.length === 1 ? refs[0] : 'letzten Prime-Events'} (Idealo-Preisverlauf, alle Shops). Keine Garantie.`
+      : '';
+
+    ui.ptoggle.hidden = !withData.length || status === 'ongoing';
+    ui.ptoggle.textContent = primeOpen ? 'Details ausblenden ▴' : 'Je Artikel ▾';
+    ui.plist.hidden = !primeOpen || ui.ptoggle.hidden;
+    if (!ui.plist.hidden) {
+      ui.plist.innerHTML = evals
+        .filter((e) => e.pe.state === 'ok' || e.pe.state === 'nodata')
+        .sort((a, b) => (b.pe.saving || 0) - (a.pe.saving || 0))
+        .map(({ item, pe }) => {
+          if (pe.state === 'nodata') {
+            return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span><span class="s none">keine Daten</span></li>`;
+          }
+          const r = pe.ref;
+          const pct = Math.round(r.discount * 100);
+          const detail = pct > 0
+            ? `${esc(r.event.name)} ${esc(formatEventRange(r.event))}: −${pct} % (${fmt(r.primePrice)} statt ${fmt(r.base)}) · erwartet ca. ${fmt(pe.expected)}${pe.bundle ? ' (Bündel-Teile)' : ''}`
+            : `${esc(r.event.name)} ${esc(formatEventRange(r.event))}: kein Prime-Rabatt (${fmt(r.primePrice)})`;
+          const right = pe.saving >= 0.5 ? `<span class="s">−${fmt(pe.saving)}</span>` : '<span class="s none">kaum Ersparnis</span>';
+          return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span>${right}<span class="p">${detail}</span></li>`;
+        }).join('');
+    }
+  }
+
 
   /** Kleines Etikett direkt am Artikel im Warenkorb */
   function drawBadges() {
@@ -570,6 +777,8 @@
 
   function rescan() {
     refreshQueue.length = 0;
+    primeData.clear();
+    primeQueue.length = 0;
     for (const item of items.values()) {
       if (item.status === 'scanning') continue;
       item.status = 'pending';
@@ -606,6 +815,7 @@
       if (settings.cartCheck && !port) start();
       else if (settings.cartCheck) { reconcile(); work(); }
     }
+    if (changes.primeCheck && settings.primeCheck) for (const item of items.values()) if (item.status === 'done') schedulePrime(item);
     render(); // Sortierung/Versandfilter → nur neu rechnen, keine neuen Anfragen
   });
 })();

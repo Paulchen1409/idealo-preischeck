@@ -92,8 +92,26 @@ angepassten Headern). Deshalb:
    Erweiterung ist), verbindet sich per Port mit dem Worker und holt Verlaufs-URLs als same-origin-Anfrage.
 3. Klappt das nicht, folgt ein direkter Abruf mit angepassten Headern (Sitzungsregel, nur für Worker-Anfragen).
 
+## Prime-Check (Warenkorb)
+
+Frage: Lohnt es sich, bis zum nächsten Prime-Event zu warten? (`prime.js`, Anzeige in `cart.js`)
+
+- **Termine** stehen in `PRIME_EVENTS` (Quelle: Amazons Pressemitteilungen). Neue Termine kommen per Update.
+  Ist kein Termin angekündigt, wird das letzte Event derselben Art + 52 Wochen als „voraussichtlich" gezeigt.
+- **Daten:** Idealo-Preisverlauf mit `period=2Y` – täglich, reicht ca. 15 Monate zurück (also über das
+  letzte gleichartige Event hinaus). Idealo erfasst Prime-Angebote (gemessen Prime Day 2026: Echo Dot −46 %,
+  Fire TV Stick −19 %, Kindle Paperwhite −15 %).
+- **Je vergangenem Event:** Normalpreis = Median Tag −37…−8 vor Start; Prime-Preis = Minimum von Tag −7
+  (frühe Angebote) bis Event-Ende; Rabatt = 1 − Prime-Preis / Normalpreis (< 2 % zählt als 0).
+- **Schätzung:** Rabatt des letzten Events derselben Art (sonst des jüngsten) × heutiger Bestpreis
+  (min. Amazon, Idealo) – höchstens bis auf den damaligen Prime-Preis. Ein Produkt, das vor einem Jahr nur
+  allgemein billiger war, gilt so nicht als „Warten lohnt sich".
+- **Anzeige:** zählt Artikel mit Ersparnis ≥ max(1 €, 3 %); Bündel = Summe der Teile. Läuft das Event gerade,
+  wird keine Ersparnis versprochen. Ergebnisse je Produkt 12 h in `storage.local`.
+
 ## Grenzen
 
 - Idealo hat keine offizielle Schnittstelle; Angebote werden aus der Webseite gelesen, der Preisverlauf kommt von der internen Schnittstelle der Idealo-Kurve. Ändert Idealo etwas, zeigen Button und Panel einen Hinweis statt falscher Werte.
 - In der Suche gibt es keine EAN, dort wird nur über den Titel gesucht.
+- Prime-Check: Schätzung aus der Vergangenheit, keine Garantie. Neue Produkte (jünger als das letzte Event) haben keine Daten.
 - Idealo-Einzelangebote ohne Shopnamen (oft Amazon selbst) werden bewusst nicht als Treffer gewertet.
