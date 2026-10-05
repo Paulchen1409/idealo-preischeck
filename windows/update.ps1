@@ -14,11 +14,16 @@
 param(
   [switch]$Force,                         # auch ohne neuere Version neu laden
   [switch]$Quiet,                         # keine Ausgabe, nur Protokoll (Aufgabenplanung)
-  [string]$InstallDir = $PSScriptRoot,
+  [string]$InstallDir,                    # Standard: Ordner dieses Skripts
   [string]$SourceDir                      # Erstinstallation aus einem lokalen Ordner statt von GitHub
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Eigener Ordner – nicht über $PSScriptRoot im param()-Block: der ist in Windows PowerShell 5.1 dort leer
+$scriptDir = $PSScriptRoot
+if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $InstallDir) { $InstallDir = $scriptDir }
 $ProgressPreference = 'SilentlyContinue'  # Downloads in PowerShell 5.1 sonst extrem langsam
 try {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

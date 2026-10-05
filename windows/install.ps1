@@ -22,6 +22,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here       = $PSScriptRoot
+if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $InstallDir = Join-Path $env:LOCALAPPDATA 'IdealoPreischeck'
 $extDir     = Join-Path $InstallDir 'extension'
 $taskName   = 'IdealoPreischeck-Update'
