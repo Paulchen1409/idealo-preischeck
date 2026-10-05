@@ -196,6 +196,21 @@
   // Läuft direkt hier im Content-Script (Laden über den Hintergrund-Worker, Auswertung mit idealo.js),
   // damit der Button den Preis zeigt, ohne dass man klicken muss.
 
+  // Diagnose (vorübergehend): Ergebnis der Preisverlauf-Abfrage als unsichtbares Attribut an der Seite,
+  // damit sich Fehler ohne Entwicklerwerkzeuge nachvollziehen lassen.
+  async function diagnoseHistory(productUrl) {
+    const info = { version: chrome.runtime.getManifest().version, productUrl, id: productIdFromUrl(productUrl) };
+    try {
+      const res = await fetchIdealo(`${IDEALO}/price-chart/sites/1/products/${info.id}/history?period=3M`);
+      info.status = res.status;
+      info.ok = res.ok;
+      info.start = String(res.html || '').slice(0, 80);
+    } catch (err) {
+      info.error = err.message;
+    }
+    document.documentElement.dataset.idealoPreischeckDebug = JSON.stringify(info);
+  }
+
   async function autoCheck(asin) {
     checkedAsin = asin;
     setButtonState('loading');
@@ -211,6 +226,7 @@
       lastCheck = { offers: parseOffers(doc), ld: parseJsonLd(doc), amzPrice };
       const best = computeBest(lastCheck.offers, lastCheck.ld, settings, lastCheck.amzPrice);
       setButtonState(best.state, best);
+      diagnoseHistory(found.url);
     } catch (err) {
       console.warn('[Idealo-Preischeck]', err);
       if (asin === currentAsin) setButtonState('error');
@@ -272,6 +288,7 @@
     if ((changes.sort || changes.freeShipOnly) && lastCheck) {
       const best = computeBest(lastCheck.offers, lastCheck.ld, settings, lastCheck.amzPrice);
       setButtonState(best.state, best);
+      diagnoseHistory(found.url);
     }
     tick();
   });

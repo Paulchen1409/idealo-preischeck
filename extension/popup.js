@@ -114,7 +114,7 @@ async function loadHistory() {
   try {
     const h = await fetchPriceHistory(id, historyPeriod);
     if (token !== historyToken) return;
-    if (!h) { chart.innerHTML = '<div class="msg">Verlauf derzeit nicht verfügbar</div>'; return; }
+    if (!h) throw new Error('zu wenige Datenpunkte');
 
     const amzPrice = amazon ? parseEuro(amazon.priceText) : null;
     renderSparkline(chart, $('history-readout'), h.points, { amazonPrice: amzPrice, fmt });
