@@ -1,0 +1,159 @@
+{
+  "manifest_version": 3,
+  "name": "Amazon → Idealo Preischeck",
+  "version": "1.6.0",
+  "description": "Vergleicht Amazon mit Idealo: Button und Preisverlauf auf Produktseiten, Etiketten in der Suche und Spar-Check im Warenkorb.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Idealo-Preise anzeigen",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.de/*/dp/*",
+        "https://www.amazon.de/dp/*",
+        "https://www.amazon.de/gp/product/*",
+        "https://www.amazon.de/*/gp/product/*",
+        "https://www.amazon.de/gp/aw/d/*",
+        "https://www.amazon.at/*/dp/*",
+        "https://www.amazon.at/dp/*",
+        "https://www.amazon.at/gp/product/*",
+        "https://www.amazon.at/*/gp/product/*",
+        "https://www.amazon.at/gp/aw/d/*",
+        "https://www.amazon.com/*/dp/*",
+        "https://www.amazon.com/dp/*",
+        "https://www.amazon.com/gp/product/*",
+        "https://www.amazon.com/*/gp/product/*",
+        "https://www.amazon.com/gp/aw/d/*",
+        "https://www.amazon.co.uk/*/dp/*",
+        "https://www.amazon.co.uk/dp/*",
+        "https://www.amazon.co.uk/gp/product/*",
+        "https://www.amazon.co.uk/*/gp/product/*",
+        "https://www.amazon.co.uk/gp/aw/d/*",
+        "https://www.amazon.fr/*/dp/*",
+        "https://www.amazon.fr/dp/*",
+        "https://www.amazon.fr/gp/product/*",
+        "https://www.amazon.fr/*/gp/product/*",
+        "https://www.amazon.fr/gp/aw/d/*",
+        "https://www.amazon.it/*/dp/*",
+        "https://www.amazon.it/dp/*",
+        "https://www.amazon.it/gp/product/*",
+        "https://www.amazon.it/*/gp/product/*",
+        "https://www.amazon.it/gp/aw/d/*",
+        "https://www.amazon.es/*/dp/*",
+        "https://www.amazon.es/dp/*",
+        "https://www.amazon.es/gp/product/*",
+        "https://www.amazon.es/*/gp/product/*",
+        "https://www.amazon.es/gp/aw/d/*",
+        "https://www.amazon.nl/*/dp/*",
+        "https://www.amazon.nl/dp/*",
+        "https://www.amazon.nl/gp/product/*",
+        "https://www.amazon.nl/*/gp/product/*",
+        "https://www.amazon.nl/gp/aw/d/*"
+      ],
+      "js": [
+        "scrape.js",
+        "idealo.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.amazon.at/s*",
+        "https://www.amazon.at/b*",
+        "https://www.amazon.co.uk/s*",
+        "https://www.amazon.co.uk/b*",
+        "https://www.amazon.com/s*",
+        "https://www.amazon.com/b*",
+        "https://www.amazon.de/s*",
+        "https://www.amazon.de/b*",
+        "https://www.amazon.es/s*",
+        "https://www.amazon.es/b*",
+        "https://www.amazon.fr/s*",
+        "https://www.amazon.fr/b*",
+        "https://www.amazon.it/s*",
+        "https://www.amazon.it/b*",
+        "https://www.amazon.nl/s*",
+        "https://www.amazon.nl/b*"
+      ],
+      "js": [
+        "idealo.js",
+        "search.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.amazon.de/cart*",
+        "https://www.amazon.de/gp/cart/*",
+        "https://www.amazon.at/cart*",
+        "https://www.amazon.at/gp/cart/*",
+        "https://www.amazon.com/cart*",
+        "https://www.amazon.com/gp/cart/*",
+        "https://www.amazon.co.uk/cart*",
+        "https://www.amazon.co.uk/gp/cart/*",
+        "https://www.amazon.fr/cart*",
+        "https://www.amazon.fr/gp/cart/*",
+        "https://www.amazon.it/cart*",
+        "https://www.amazon.it/gp/cart/*",
+        "https://www.amazon.es/cart*",
+        "https://www.amazon.es/gp/cart/*",
+        "https://www.amazon.nl/cart*",
+        "https://www.amazon.nl/gp/cart/*"
+      ],
+      "js": [
+        "scrape.js",
+        "idealo.js",
+        "cart.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "popup.html",
+        "popup.css",
+        "popup.js",
+        "scrape.js",
+        "idealo.js",
+        "sparkline.js"
+      ],
+      "matches": [
+        "https://www.amazon.de/*",
+        "https://www.amazon.at/*",
+        "https://www.amazon.com/*",
+        "https://www.amazon.co.uk/*",
+        "https://www.amazon.fr/*",
+        "https://www.amazon.it/*",
+        "https://www.amazon.es/*",
+        "https://www.amazon.nl/*"
+      ]
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://www.idealo.de/*"
+  ]
+}

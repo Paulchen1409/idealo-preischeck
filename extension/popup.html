@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Idealo-Preischeck</div>
+    <div>
+      <button id="btn-settings" class="icon-btn" title="Einstellungen">⚙</button>
+      <button id="btn-close" class="icon-btn hidden" title="Schließen">✕</button>
+    </div>
+  </header>
+
+  <!-- Einstellungen -->
+  <section id="settings" class="hidden">
+    <label>Sortierung
+      <select id="set-sort">
+        <option value="total">Günstigster Gesamtpreis (inkl. Versand)</option>
+        <option value="price">Günstigster Artikelpreis (ohne Versand)</option>
+        <option value="rating">Beste Shop-Bewertung</option>
+      </select>
+    </label>
+    <label>Angezeigte Angebote
+      <select id="set-count">
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="set-freeship"> Nur Angebote mit kostenlosem Versand</label>
+    <label class="check"><input type="checkbox" id="set-autoload"> Bestes Suchergebnis automatisch laden</label>
+    <label class="check"><input type="checkbox" id="set-showbutton"> Idealo-Button auf Amazon unter dem Preis</label>
+    <label class="check"><input type="checkbox" id="set-autocheck"> Beim Öffnen einer Amazon-Seite automatisch prüfen</label>
+    <label class="check"><input type="checkbox" id="set-searchlabels"> Idealo-Etiketten in der Amazon-Suche</label>
+    <label class="check"><input type="checkbox" id="set-cartcheck"> Spar-Check im Amazon-Warenkorb</label>
+    <p class="hint">Wird automatisch gespeichert. <span id="version"></span></p>
+  </section>
+
+  <main id="main">
+    <!-- Amazon-Produkt -->
+    <section id="amazon" class="card hidden">
+      <div class="label">Auf Amazon</div>
+      <div id="amz-title" class="title"></div>
+      <div class="row">
+        <span id="amz-price" class="price"></span>
+        <span id="amz-meta" class="muted"></span>
+      </div>
+    </section>
+
+    <!-- Suche -->
+    <section id="search" class="hidden">
+      <form id="search-form">
+        <input id="query" type="text" placeholder="Suchbegriff für Idealo">
+        <button type="submit">Suchen</button>
+      </form>
+    </section>
+
+    <div id="status" class="status"></div>
+
+    <!-- Treffer-Auswahl -->
+    <section id="matches" class="hidden">
+      <div class="label">Passendes Produkt auf Idealo wählen</div>
+      <ul id="match-list"></ul>
+    </section>
+
+    <!-- Ergebnis -->
+    <section id="result" class="hidden">
+      <div class="card highlight">
+        <div class="label">Idealo-Produkt</div>
+        <div id="ide-title" class="title"></div>
+        <div class="summary">
+          <div>
+            <div class="label" id="best-label">Günstigster Gesamtpreis</div>
+            <div id="best-price" class="big"></div>
+            <div id="best-shop" class="muted"></div>
+          </div>
+          <div id="savings" class="savings"></div>
+        </div>
+        <div id="range" class="muted small"></div>
+        <div id="history" class="history hidden">
+          <div class="history-head">
+            <span class="label">Preisverlauf</span>
+            <div class="periods">
+              <button type="button" data-period="3M" class="active">3M</button>
+              <button type="button" data-period="6M">6M</button>
+              <button type="button" data-period="1Y">1J</button>
+            </div>
+          </div>
+          <div id="history-readout" class="history-readout"></div>
+          <div id="history-chart" class="history-chart"></div>
+          <div id="history-stats" class="history-stats"></div>
+          <div id="history-verdict" class="history-verdict"></div>
+        </div>
+        <div class="sortbar">
+          <select id="sort-inline">
+            <option value="total">Gesamtpreis</option>
+            <option value="price">Artikelpreis</option>
+            <option value="rating">Shop-Bewertung</option>
+          </select>
+          <button id="btn-back" class="link-btn hidden">Anderes Produkt</button>
+        </div>
+      </div>
+      <ul id="offers"></ul>
+      <a id="open-idealo" class="primary" target="_blank" rel="noopener">Auf Idealo öffnen ↗</a>
+    </section>
+  </main>
+
+  <script src="scrape.js"></script>
+  <script src="idealo.js"></script>
+  <script src="sparkline.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

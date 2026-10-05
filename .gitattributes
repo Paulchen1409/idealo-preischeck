@@ -1,0 +1,6 @@
+# Windows-Skripte mit CRLF ausliefern, sonst stolpern cmd/VBScript
+*.cmd  text eol=crlf
+*.vbs  text eol=crlf
+*.ps1  text eol=crlf
+*      text=auto
+*.png  binary
