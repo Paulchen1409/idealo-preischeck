@@ -5,7 +5,7 @@
   wird das Repo als ZIP geladen und der Erweiterungsordner ausgetauscht. manifest.json wird
   zuletzt geschrieben – daran erkennt die Erweiterung die neue Version und lädt sich selbst neu.
 
-  Läuft automatisch über die Aufgabenplanung (bei Anmeldung und alle 3 Stunden).
+  Läuft automatisch über die Aufgabenplanung (einmal täglich; war der PC aus, beim nächsten Start).
   Von Hand:  update-jetzt.cmd  (oder: powershell -ExecutionPolicy Bypass -File update.ps1)
 
   Kompatibel mit Windows PowerShell 5.1.
