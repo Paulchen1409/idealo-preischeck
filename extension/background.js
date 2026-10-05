@@ -121,9 +121,10 @@ async function pump() {
 }
 
 // ---------- Anfragen wie von idealo.de selbst ----------
-// Fetches aus dem Service Worker tragen "Origin: chrome-extension://…". Idealos Webseiten stört das nicht,
-// der separate Preisverlaufs-Dienst (/price-chart/) lehnt fremde Origins aber ab. Diese Sitzungsregel
-// entfernt den Origin-Header und setzt einen idealo-Referer – nur für Anfragen ohne Tab (= unser Worker).
+// Idealos Preisverlaufs-Dienst (/price-chart/) beantwortet nur Anfragen, die nach idealo.de selbst aussehen:
+// gemessen in Brave: von idealo.de → 200, von amazon.de → 503, aus der Erweiterung (Sec-Fetch-Site: none) → 404 leer.
+// Diese Sitzungsregel lässt die Anfragen unseres Workers wie Anfragen von idealo.de aussehen –
+// nur für Anfragen ohne Tab (tabIds -1 = Service Worker), Seitenaufrufe im Browser bleiben unberührt.
 const HEADER_RULE_ID = 1;
 const headerRuleReady = chrome.declarativeNetRequest.updateSessionRules({
   removeRuleIds: [HEADER_RULE_ID],
@@ -135,6 +136,7 @@ const headerRuleReady = chrome.declarativeNetRequest.updateSessionRules({
       requestHeaders: [
         { header: 'origin', operation: 'remove' },
         { header: 'referer', operation: 'set', value: 'https://www.idealo.de/' },
+        { header: 'sec-fetch-site', operation: 'set', value: 'same-origin' },
       ],
     },
     condition: { urlFilter: '||www.idealo.de/', tabIds: [-1], resourceTypes: ['xmlhttprequest', 'other'] },
