@@ -41,7 +41,8 @@ const productIdFromUrl = (url) => (String(url || '').match(/OffersOfProduct\/(\d
 async function fetchPriceHistory(productId, period = '3M') {
   if (!productId) return null;
   const res = await fetchIdealo(`${IDEALO}/price-chart/sites/1/products/${productId}/history?period=${period}`);
-  if (!res.ok) return null; // 404 = kein Verlauf für dieses Produkt
+  if (res.status === 404) return null; // dieses Produkt hat keinen Verlauf
+  if (!res.ok) throw new Error(`Idealo antwortet mit ${res.status}`);
   let json;
   try { json = JSON.parse(res.html); } catch { throw new Error('Preisverlauf hat ein unerwartetes Format'); }
   const points = (json.data || [])

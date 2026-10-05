@@ -24,7 +24,7 @@ const IDEALO_ORIGIN = 'https://www.idealo.de';
 const CACHE_MS = 10 * 60 * 1000;
 const CACHE_MAX = 80;
 const GAP_MS = { high: 400, low: 600 };   // Mindestabstand vor einer Anfrage dieser Priorität
-const COOLDOWN_MS = 60 * 1000;            // Pause nach "zu viele Anfragen"
+const COOLDOWN_MS = { 429: 60 * 1000, 403: 20 * 1000 }; // Pause nach "zu viele Anfragen" bzw. Sperre
 const ASIN_FRESH_MS = 30 * 60 * 1000;     // Ergebnis pro Amazon-Artikel gilt als aktuell …
 const ASIN_KEEP_MS = 24 * 60 * 60 * 1000; // … und wird bis zu 24 h als "alter Stand" aufbewahrt
 const DETAILS_KEEP_MS = 7 * 24 * 60 * 60 * 1000; // Amazon-Details (EAN/Modell) in storage.local
@@ -37,6 +37,7 @@ let lastRequestAt = 0;
 let cooldownUntil = 0;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isPriceChart = (url) => url.includes('/price-chart/');
 const THROTTLED = { error: 'Idealo bremst gerade zu viele Anfragen – bitte kurz warten.', throttled: true };
 
 // ---------- Cache ----------
@@ -92,9 +93,17 @@ async function pump() {
 
       // Idealo hat gebremst: nicht stur weiterfeuern, sondern alle Wartenden sofort informieren.
       // Der Warenkorb-Check wartet dann selbst und macht später weiter.
+      // Ausnahme: Der Preisverlauf ist ein eigener, leichter Idealo-Dienst – er läuft auch während der Pause.
       if (Date.now() < cooldownUntil) {
-        for (const lane of [lanes.high, lanes.low]) lane.splice(0).forEach((j) => j.resolve(THROTTLED));
-        break;
+        for (const lane of [lanes.high, lanes.low]) {
+          const keep = [];
+          for (const j of lane.splice(0)) {
+            if (isPriceChart(j.url)) keep.push(j);
+            else j.resolve(THROTTLED);
+          }
+          lane.push(...keep);
+        }
+        if (!lanes.high.length && !lanes.low.length) break;
       }
 
       const wait = lastRequestAt + GAP_MS[priority] - Date.now();
@@ -111,11 +120,35 @@ async function pump() {
   }
 }
 
+// ---------- Anfragen wie von idealo.de selbst ----------
+// Fetches aus dem Service Worker tragen "Origin: chrome-extension://…". Idealos Webseiten stört das nicht,
+// der separate Preisverlaufs-Dienst (/price-chart/) lehnt fremde Origins aber ab. Diese Sitzungsregel
+// entfernt den Origin-Header und setzt einen idealo-Referer – nur für Anfragen ohne Tab (= unser Worker).
+const HEADER_RULE_ID = 1;
+const headerRuleReady = chrome.declarativeNetRequest.updateSessionRules({
+  removeRuleIds: [HEADER_RULE_ID],
+  addRules: [{
+    id: HEADER_RULE_ID,
+    priority: 1,
+    action: {
+      type: 'modifyHeaders',
+      requestHeaders: [
+        { header: 'origin', operation: 'remove' },
+        { header: 'referer', operation: 'set', value: 'https://www.idealo.de/' },
+      ],
+    },
+    condition: { urlFilter: '||www.idealo.de/', tabIds: [-1], resourceTypes: ['xmlhttprequest', 'other'] },
+  }],
+}).catch((err) => console.warn('[Idealo-Preischeck] Header-Regel nicht gesetzt:', err));
+
 async function doFetch(url) {
   try {
+    await headerRuleReady;
     const res = await fetch(url, { credentials: 'include', headers: { Accept: 'text/html,application/json' } });
-    if (res.status === 429 || res.status === 403) {
-      cooldownUntil = Date.now() + COOLDOWN_MS;
+    // 429 = zu viele Anfragen. 403 nur bei den Seiten als Bremse werten – beim Preisverlauf heißt 403
+    // "dieser Dienst will nicht", das darf nicht alle anderen Anfragen für eine Minute blockieren.
+    if (res.status === 429 || (res.status === 403 && !isPriceChart(url))) {
+      cooldownUntil = Math.max(cooldownUntil, Date.now() + COOLDOWN_MS[res.status]);
       return THROTTLED;
     }
     const response = { ok: res.ok, status: res.status, url: res.url, html: await res.text() };

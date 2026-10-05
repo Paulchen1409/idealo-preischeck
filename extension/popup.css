@@ -151,3 +151,6 @@ button, .primary {
   transform: translate(-50%, -50%); pointer-events: none;
   background: var(--trend); box-shadow: 0 0 0 2px var(--soft);
 }
+
+.history-chart .msg small { display: block; font-size: 10px; opacity: .7; margin-top: 2px; text-align: center; }
+.history-chart .msg { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }

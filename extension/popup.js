@@ -135,7 +135,11 @@ async function loadHistory() {
     verdict.classList.add(cls);
   } catch (err) {
     console.warn('[Idealo-Preischeck] Preisverlauf:', err);
-    if (token === historyToken) chart.innerHTML = '<div class="msg">Verlauf derzeit nicht verfügbar</div>';
+    if (token === historyToken) {
+      // Grund klein mit anzeigen – hilft bei der Fehlersuche
+      chart.innerHTML = '<div class="msg">Verlauf derzeit nicht verfügbar<small></small></div>';
+      chart.querySelector('small').textContent = err.message || '';
+    }
   }
 }
 
