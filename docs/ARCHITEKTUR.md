@@ -80,6 +80,18 @@ Ergebnis gibt es deshalb einmal pro ASIN, Etiketten einmal pro Suchergebnis; ein
 bekommt nie ein zweites. Beobachter (Suche, Warenkorb) arbeiten mit begrenzter Verzögerung statt mit
 einem bei jeder Änderung neu startenden Timer, damit sie auch auf Seiten mit Dauer-Änderungen laufen.
 
+## Preisverlauf
+
+Idealos Preisverlaufs-Dienst (`/price-chart/…/history`) antwortet nur Anfragen von idealo.de selbst
+(gemessen in Brave: von idealo.de 200, von amazon.de 503, aus der Erweiterung ein leeres 404 – auch mit
+angepassten Headern). Deshalb:
+
+1. `background.js` legt ein Offscreen-Dokument (`offscreen.html`) an, das `https://www.idealo.de/robots.txt`
+   in einen Rahmen lädt – die einzige Idealo-Adresse ohne `X-Frame-Options`.
+2. `idealo-frame.js` läuft als Content-Script in diesem Rahmen (nur wenn der übergeordnete Rahmen unsere
+   Erweiterung ist), verbindet sich per Port mit dem Worker und holt Verlaufs-URLs als same-origin-Anfrage.
+3. Klappt das nicht, folgt ein direkter Abruf mit angepassten Headern (Sitzungsregel, nur für Worker-Anfragen).
+
 ## Grenzen
 
 - Idealo hat keine offizielle Schnittstelle; Angebote werden aus der Webseite gelesen, der Preisverlauf kommt von der internen Schnittstelle der Idealo-Kurve. Ändert Idealo etwas, zeigen Button und Panel einen Hinweis statt falscher Werte.

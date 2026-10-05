@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Amazon → Idealo Preischeck",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Vergleicht Amazon mit Idealo: Button und Preisverlauf auf Produktseiten, Etiketten in der Suche und Spar-Check im Warenkorb.",
   "action": {
     "default_popup": "popup.html",
