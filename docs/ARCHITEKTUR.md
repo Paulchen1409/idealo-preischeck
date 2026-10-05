@@ -110,6 +110,15 @@ Frage: Lohnt es sich, bis zum nächsten Prime-Event zu warten? (`prime.js`, Anze
 - **Anzeige:** zählt Artikel mit Ersparnis ≥ max(1 €, 3 %); Bündel = Summe der Teile. Läuft das Event gerade,
   wird keine Ersparnis versprochen. Ergebnisse je Produkt 12 h in `storage.local`.
 
+## Produkt-Abgleich (Amazon ↔ Idealo)
+
+- **EAN:** aus dem Feld "EAN"; fehlt es, wird jeder Detailwert genommen, der eine gültige GTIN ist (Prüfziffer).
+  Manche Händler tragen die EAN unter "Modellnummer" ein (z. B. 8BitDo Ultimate 2) – dann wird sie nicht als Modell benutzt.
+- **Farbe:** nennen beide Titel eine Farbe (DE/EN-Synonyme, z. B. Purple = lila) und keine passt → kein Treffer; passende Farbe gibt einen Bonus.
+- **Versionsnummer:** Wort + 1–2-stellige Zahl in den ersten Wörtern ("Ultimate 2", nicht "Kabel 2 m").
+  Andere Zahl beim Kandidaten ("Ultimate 3") → kein Treffer; fehlt die Zahl ("Ultimate") → nur unsicherer Treffer.
+- Dazu wie bisher: Modellcodes und Generation ("2. Gen") müssen übereinstimmen.
+
 ## Grenzen
 
 - Idealo hat keine offizielle Schnittstelle; Angebote werden aus der Webseite gelesen, der Preisverlauf kommt von der internen Schnittstelle der Idealo-Kurve. Ändert Idealo etwas, zeigen Button und Panel einen Hinweis statt falscher Werte.

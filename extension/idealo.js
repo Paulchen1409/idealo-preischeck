@@ -111,31 +111,81 @@ function generationOf(text) {
 }
 const stripGeneration = (text) => GEN_PATTERNS.reduce((t, re) => t.replace(re, ' '), String(text || ''));
 
+// Farben: deutsche und englische Namen gelten als gleich ("Purple" = "lila")
+const COLOR_GROUPS = {
+  schwarz: ['schwarz', 'black'], weiss: ['weiß', 'weiss', 'white'], grau: ['grau', 'grey', 'gray'],
+  silber: ['silber', 'silver'], gold: ['gold'], blau: ['blau', 'blue'], rot: ['rot', 'red'],
+  gruen: ['grün', 'gruen', 'green'], gelb: ['gelb', 'yellow'], orange: ['orange'],
+  lila: ['lila', 'purple', 'violett', 'violet'], pink: ['pink', 'rosa'], beige: ['beige'],
+  braun: ['braun', 'brown'], mint: ['mint'], transparent: ['transparent'],
+};
+const COLOR_OF = new Map(Object.entries(COLOR_GROUPS).flatMap(([g, names]) => names.map((n) => [n, g])));
+const colorsOf = (wordList) => new Set(wordList.map((w) => COLOR_OF.get(w)).filter(Boolean));
+const normColor = (w) => (COLOR_OF.has(w) ? `#${COLOR_OF.get(w)}` : w);
+
+// Alle Wörter inkl. einstelliger Zahlen (für Versionsnummern wie "Ultimate 2")
+const rawWords = (s) => clean(s).toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').split(' ').filter(Boolean);
+const UNITS = new Set(['m', 'cm', 'mm', 'gb', 'tb', 'mb', 'w', 'v', 'x', 'l', 'kg', 'g', 'er', 'stück', 'pack', 'zoll']);
+/** "Name + Versionsnummer" am Titelanfang, z. B. ["ultimate","2"] aus "8BitDo Ultimate 2 Wireless …" */
+function versionPairs(text) {
+  const w = rawWords(stripGeneration(text)).slice(0, 7);
+  const pairs = [];
+  for (let i = 0; i < w.length - 1; i++) {
+    if (/^[a-zäöüß]{3,}$/.test(w[i]) && /^\d{1,2}$/.test(w[i + 1]) && !UNITS.has(w[i + 2] || '')) pairs.push([w[i], w[i + 1]]);
+  }
+  return pairs;
+}
+
 /**
  * Bewertet, wie gut ein Idealo-Titel zur Referenz (Amazon-Daten oder eigener Suchbegriff) passt.
  * - Modellnummern (Wörter mit Ziffern) müssen übereinstimmen: "XT90" ist kein Treffer für "XT35",
- *   "XT35" aber für "MXT35".
+ *   "XT35" aber für "MXT35"; "Ultimate 2C" ist kein Treffer für "Ultimate 2".
  * - Die Generation muss übereinstimmen: "SoundLink Flex (2. Generation)" ist nicht "SoundLink Flex".
+ * - Versionsnummern müssen passen: "Ultimate" ohne "2" ist nicht sicher "Ultimate 2".
+ * - Die Farbe muss passen (falls beide eine nennen): "weiß" ist kein Treffer für "Purple";
+ *   eine passende Farbe gibt einen kleinen Vorsprung vor Varianten ohne Farbangabe.
  */
 function relevance(matchTitle, refText) {
   const genRef = generationOf(refText);
   const genMatch = generationOf(matchTitle);
   const refClean = stripGeneration(refText);
   const ref = compact(refClean);
-  const refWords = new Set(tokens(refClean));
+  const refTokens = tokens(refClean);
   const words = tokens(stripGeneration(matchTitle));
   if (!words.length) return { score: 0, confident: false };
-  const found = words.filter((w) => refWords.has(w) || (w.length >= 4 && ref.includes(w)));
+
+  // Farbe
+  const refColors = colorsOf(refTokens);
+  const matchColors = colorsOf(words);
+  const colorMatch = [...matchColors].some((c) => refColors.has(c));
+  if (refColors.size && matchColors.size && !colorMatch) return { score: 0, confident: false };
+
+  // Wort-Übereinstimmung (Farbnamen sprachunabhängig)
+  const refWords = new Set(refTokens.map(normColor));
+  const found = words.filter((w) => refWords.has(normColor(w)) || (w.length >= 4 && ref.includes(w)));
   let score = found.length / words.length;
+
   const codes = words.filter((w) => /\d/.test(w) && w.length >= 2);
   const codeOk = codes.length === 0 || codes.some((c) => ref.includes(c));
   if (!codeOk) return { score: 0, confident: false };
-  // Beide nennen eine Generation, aber verschiedene → anderes Produkt
+
+  // Generation: verschieden → anderes Produkt; nur einseitig genannt → nicht sicher
   if (genRef && genMatch && genRef !== genMatch) return { score: 0, confident: false };
-  // Nur eine Seite nennt eine Generation → möglich, aber nicht sicher
-  const genUnclear = (genRef || null) !== (genMatch || null);
-  if (genUnclear) score *= 0.5;
-  return { score, confident: !genUnclear && score >= 0.6 };
+  let unsure = (genRef || null) !== (genMatch || null);
+
+  // Versionsnummer nach dem Produktnamen ("Ultimate 2")
+  const matchRaw = rawWords(stripGeneration(matchTitle));
+  for (const [name, num] of versionPairs(refText)) {
+    const at = matchRaw.indexOf(name);
+    if (at < 0) continue;
+    const next = matchRaw[at + 1] || '';
+    if (/^\d{1,2}$/.test(next) && next !== num) return { score: 0, confident: false }; // andere Version
+    if (next !== num) unsure = true;                                                  // Version fehlt
+  }
+
+  if (unsure) score *= 0.5;
+  if (colorMatch) score = Math.min(1, score + 0.15);
+  return { score, confident: !unsure && score >= 0.6 };
 }
 
 // ---------- Idealo: Suche ----------

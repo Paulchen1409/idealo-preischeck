@@ -4,6 +4,14 @@
 // Die Funktion muss eigenständig bleiben (keine Verweise nach außen), weil chrome.scripting sie serialisiert.
 function scrapeAmazon(doc = document, pageUrl = location.href) {
   const txt = (sel) => doc.querySelector(sel)?.textContent?.replace(/\s+/g, ' ').trim() || '';
+  // Gültige EAN/GTIN (8, 12, 13 oder 14 Ziffern mit korrekter Prüfziffer)?
+  const isGtin = (v) => {
+    if (!/^(\d{8}|\d{12,14})$/.test(v)) return false;
+    const d = v.split('').map(Number);
+    const check = d.pop();
+    const sum = d.reverse().reduce((acc, n, i) => acc + n * (i % 2 === 0 ? 3 : 1), 0);
+    return (10 - (sum % 10)) % 10 === check;
+  };
   const title = txt('#productTitle') || txt('#title') || doc.title;
 
   // Preis: Amazon lässt das versteckte .a-offscreen-Feld teils leer,
@@ -61,9 +69,10 @@ function scrapeAmazon(doc = document, pageUrl = location.href) {
     title,
     priceText,
     brand,
-    model: pick('modellnummer', 'herstellerreferenz', 'modell', 'model number', 'item model'),
+    model: (() => { const m = pick('modellnummer', 'herstellerreferenz', 'modell', 'model number', 'item model'); return isGtin(m.replace(/\s+/g, '')) ? '' : m; })(),
     ean: (() => {
-      // EAN steht bei Amazon.de mal als "EAN", mal als "Global Trade Identification Number" oder "UPC"
+      // EAN steht bei Amazon.de mal als "EAN", mal als "Global Trade Identification Number" oder "UPC" –
+      // und manchmal gar nicht, aber versteckt in einem anderen Feld (z. B. "Modellnummer" = 6922621507062).
       for (const key of ['ean', 'gtin', 'global trade identification number', 'upc']) {
         for (const k in details) {
           if (k === key || k.startsWith(key + ' ') || k.endsWith(' ' + key)) {
@@ -71,6 +80,10 @@ function scrapeAmazon(doc = document, pageUrl = location.href) {
             if (m) return m[0];
           }
         }
+      }
+      for (const k in details) {
+        const v = details[k].replace(/\s+/g, '');
+        if (isGtin(v)) return v;
       }
       return '';
     })(),
