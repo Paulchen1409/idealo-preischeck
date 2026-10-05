@@ -5,8 +5,8 @@
 //   Normalpreis = Median der 30 Tage vor der "Vorwoche" (Tag −37 … −8 vor Start)
 //   Prime-Preis = günstigster Preis von 7 Tagen vor Start (frühe Angebote) bis zum letzten Event-Tag
 //   Rabatt      = 1 − Prime-Preis / Normalpreis
-// Der Rabatt des letzten gleichartigen Events wird auf den heutigen Bestpreis angewendet – höchstens bis
-// auf den damaligen Prime-Preis. So wird ein Produkt, das vor einem Jahr einfach günstiger war (ohne
+// Die Rabatte des letzten Prime Days und der letzten Prime Deal Days werden auf den heutigen Bestpreis
+// angewendet (je höchstens bis auf den damaligen Prime-Preis) und als Spanne gezeigt. So wird ein Produkt, das vor einem Jahr einfach günstiger war (ohne
 // Prime-Rabatt), nicht als "Warten lohnt sich" gewertet.
 'use strict';
 
@@ -81,22 +81,33 @@ function analyzePrimeHistory(points, today = isoDay(new Date())) {
     .sort((a, b) => b.event.start.localeCompare(a.event.start));
 }
 
-/** Vergleichs-Event: das letzte derselben Art wie das nächste Event, sonst das jüngste. */
-function pickReference(analysis, nextType) {
-  return analysis.find((a) => a.event.type === nextType) || analysis[0] || null;
+/**
+ * Vergleichs-Events: das letzte Event derselben Art wie das nächste (zuerst) und das letzte der anderen Art.
+ * Prime Day und Prime Deal Days fallen oft unterschiedlich stark aus – beide zusammen ergeben eine Spanne.
+ */
+function pickReferences(analysis, nextType) {
+  const same = analysis.find((a) => a.event.type === nextType);
+  const other = analysis.find((a) => a.event.type !== nextType);
+  return [same, other].filter(Boolean);
 }
 
 /**
- * Erwartete Ersparnis pro Stück, wenn man bis zum nächsten Event wartet.
- * bestNow: günstigster Preis heute (Amazon oder Idealo). Liefert { saving, expected, ref } oder null.
+ * Erwartete Ersparnis pro Stück, wenn man bis zum nächsten Event wartet – als Spanne über die Vergleichs-Events.
+ * bestNow: günstigster Preis heute (Amazon oder Idealo).
+ * Liefert { low, high, refs: [{ ref, saving, expected }] } oder null.
  */
 function estimatePrimeSaving(bestNow, analysis, nextType) {
-  const ref = pickReference(analysis, nextType);
-  if (!ref || !(bestNow > 0)) return null;
-  const byDiscount = bestNow * ref.discount;
-  const byLastPrice = bestNow - ref.primePrice;          // nicht günstiger rechnen als beim letzten Mal
-  const saving = Math.max(0, Math.min(byDiscount, byLastPrice));
-  return { saving: Math.round(saving * 100) / 100, expected: Math.round((bestNow - saving) * 100) / 100, ref };
+  const refs = pickReferences(analysis, nextType);
+  if (!refs.length || !(bestNow > 0)) return null;
+  const round = (n) => Math.round(n * 100) / 100;
+  const perRef = refs.map((ref) => {
+    const byDiscount = bestNow * ref.discount;
+    const byLastPrice = bestNow - ref.primePrice;        // nicht günstiger rechnen als beim letzten Mal
+    const saving = round(Math.max(0, Math.min(byDiscount, byLastPrice)));
+    return { ref, saving, expected: round(bestNow - saving), capped: byLastPrice < byDiscount && saving > 0 };
+  });
+  const savings = perRef.map((r) => r.saving);
+  return { low: Math.min(...savings), high: Math.max(...savings), refs: perRef };
 }
 
 /** "6.–7. Okt. 2026" */

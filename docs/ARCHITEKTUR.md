@@ -103,9 +103,10 @@ Frage: Lohnt es sich, bis zum nächsten Prime-Event zu warten? (`prime.js`, Anze
   Fire TV Stick −19 %, Kindle Paperwhite −15 %).
 - **Je vergangenem Event:** Normalpreis = Median Tag −37…−8 vor Start; Prime-Preis = Minimum von Tag −7
   (frühe Angebote) bis Event-Ende; Rabatt = 1 − Prime-Preis / Normalpreis (< 2 % zählt als 0).
-- **Schätzung:** Rabatt des letzten Events derselben Art (sonst des jüngsten) × heutiger Bestpreis
-  (min. Amazon, Idealo) – höchstens bis auf den damaligen Prime-Preis. Ein Produkt, das vor einem Jahr nur
-  allgemein billiger war, gilt so nicht als „Warten lohnt sich".
+- **Schätzung als Spanne:** Rabatt des letzten Prime Days und der letzten Prime Deal Days, je × heutiger
+  Bestpreis (min. Amazon, Idealo) und höchstens bis auf den damaligen Prime-Preis. Ein Produkt, das vor einem
+  Jahr nur allgemein billiger war (z. B. Polk XT35: 188,90 € vor, während und nach den Deal Days 2025),
+  gilt dadurch nicht als Prime-Ersparnis; ein echter Prime-Rabatt beim jeweils anderen Event schon.
 - **Anzeige:** zählt Artikel mit Ersparnis ≥ max(1 €, 3 %); Bündel = Summe der Teile. Läuft das Event gerade,
   wird keine Ersparnis versprochen. Ergebnisse je Produkt 12 h in `storage.local`.
 

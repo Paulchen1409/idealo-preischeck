@@ -418,17 +418,25 @@
       parts = [{ id: ids[0], count: 1, bestNow: candidates.length ? Math.min(...candidates) : null }];
     }
 
-    let saving = 0, expected = 0, ref = null, discount = 0;
+    // Spanne über die Vergleichs-Events; je Event die Teile (bei Bündeln) aufsummieren
+    let low = 0, high = 0;
+    const byEvent = new Map(); // Event-Start → { ref, saving, expected }
     for (const p of parts) {
       const entry = primeData.get(p.id);
       const est = p.bestNow && entry?.status === 'done' ? estimatePrimeSaving(p.bestNow, entry.analysis, nextType) : null;
       if (!est) return { state: 'nodata' };
-      saving += est.saving * p.count;
-      expected += est.expected * p.count;
-      ref = ref || est.ref;
-      discount = Math.max(discount, est.ref.discount);
+      low += est.low * p.count;
+      high += est.high * p.count;
+      for (const r of est.refs) {
+        const agg = byEvent.get(r.ref.event.start) || { ref: r.ref, saving: 0, expected: 0, capped: false };
+        agg.capped = agg.capped || r.capped;
+        agg.saving += r.saving * p.count;
+        agg.expected += r.expected * p.count;
+        byEvent.set(r.ref.event.start, agg);
+      }
     }
-    return { state: 'ok', saving: round2(saving * item.qty), expected: round2(expected), ref, discount, bundle: parts.length > 1 };
+    const refs = [...byEvent.values()].map((r) => ({ ...r, saving: round2(r.saving * item.qty), expected: round2(r.expected) }));
+    return { state: 'ok', low: round2(low * item.qty), high: round2(high * item.qty), refs, bundle: parts.length > 1 };
   }
 
   // ---------- Berechnung ----------
@@ -684,8 +692,10 @@
     const evals = selected.map((item) => ({ item, pe: evaluatePrime(item, next) }));
     const pending = evals.filter((e) => e.pe.state === 'pending').length;
     const withData = evals.filter((e) => e.pe.state === 'ok');
-    const worth = withData.filter((e) => e.pe.saving >= Math.max(1, e.item.price * e.item.qty * 0.03));
-    const total = round2(worth.reduce((sum, e) => sum + e.pe.saving, 0));
+    const minWorth = (e) => Math.max(1, e.item.price * e.item.qty * 0.03);
+    const worthHigh = withData.filter((e) => e.pe.high >= minWorth(e));
+    const totalLow = round2(withData.filter((e) => e.pe.low >= minWorth(e)).reduce((sum, e) => sum + e.pe.low, 0));
+    const totalHigh = round2(worthHigh.reduce((sum, e) => sum + e.pe.high, 0));
 
     if (status === 'ongoing') {
       ui.pres.className = 'pres flat';
@@ -696,17 +706,20 @@
     } else if (!withData.length) {
       ui.pres.className = 'pres flat';
       ui.pres.textContent = 'Für diese Artikel gibt es keine Preisdaten vom letzten Prime-Event.';
-    } else if (total > 0) {
+    } else if (totalHigh > 0 && totalHigh - totalLow < 1) {
       ui.pres.className = 'pres good';
-      ui.pres.textContent = `Warten lohnt sich: ca. −${fmt(total)} bei ${worth.length} von ${selected.length} Artikeln`;
+      ui.pres.textContent = `Warten lohnt sich: ca. −${fmt(totalHigh)} bei ${worthHigh.length} von ${selected.length} Artikeln`;
+    } else if (totalHigh > 0) {
+      ui.pres.className = 'pres good';
+      ui.pres.textContent = `Warten kann sich lohnen: ${totalLow > 0 ? `ca. −${fmt(totalLow)} bis ` : 'bis zu '}−${fmt(totalHigh)} bei ${worthHigh.length} von ${selected.length} Artikeln`;
     } else {
       ui.pres.className = 'pres flat';
-      ui.pres.textContent = 'Warten lohnt sich kaum – beim letzten Mal gab es für diese Artikel keine nennenswerten Prime-Rabatte.';
+      ui.pres.textContent = 'Warten lohnt sich kaum – bei den letzten Prime-Events gab es für diese Artikel keine nennenswerten Prime-Rabatte.';
     }
 
-    const refs = [...new Set(withData.map((e) => `${e.pe.ref.event.name} ${formatEventRange(e.pe.ref.event)}`))];
+    const refNames = [...new Set(withData.flatMap((e) => e.pe.refs.map((r) => `${r.ref.event.name} ${formatEventRange(r.ref.event)}`)))];
     ui.pbasis.textContent = withData.length
-      ? `Schätzung aus den Prime-Rabatten bei den ${refs.length === 1 ? refs[0] : 'letzten Prime-Events'} (Idealo-Preisverlauf, alle Shops). Keine Garantie.`
+      ? `Schätzung aus den Prime-Rabatten bei ${refNames.join(' und ')} – also wie viel günstiger es zu Prime war als in den Wochen davor (Idealo-Preisverlauf, alle Shops). Keine Garantie.`
       : '';
 
     ui.ptoggle.hidden = !withData.length || status === 'ongoing';
@@ -715,18 +728,23 @@
     if (!ui.plist.hidden) {
       ui.plist.innerHTML = evals
         .filter((e) => e.pe.state === 'ok' || e.pe.state === 'nodata')
-        .sort((a, b) => (b.pe.saving || 0) - (a.pe.saving || 0))
+        .sort((a, b) => (b.pe.high || 0) - (a.pe.high || 0))
         .map(({ item, pe }) => {
           if (pe.state === 'nodata') {
-            return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span><span class="s none">keine Daten</span></li>`;
+            return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span><span class="s none">keine Daten</span><span class="p">Produkt zu neu oder ohne Preisverlauf zu den letzten Prime-Events</span></li>`;
           }
-          const r = pe.ref;
-          const pct = Math.round(r.discount * 100);
-          const detail = pct > 0
-            ? `${esc(r.event.name)} ${esc(formatEventRange(r.event))}: −${pct} % (${fmt(r.primePrice)} statt ${fmt(r.base)}) · erwartet ca. ${fmt(pe.expected)}${pe.bundle ? ' (Bündel-Teile)' : ''}`
-            : `${esc(r.event.name)} ${esc(formatEventRange(r.event))}: kein Prime-Rabatt (${fmt(r.primePrice)})`;
-          const right = pe.saving >= 0.5 ? `<span class="s">−${fmt(pe.saving)}</span>` : '<span class="s none">kaum Ersparnis</span>';
-          return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span>${right}<span class="p">${detail}</span></li>`;
+          const lines = pe.refs.map((r) => {
+            const label = `${esc(r.ref.event.name)} ${esc(formatEventRange(r.ref.event))}`;
+            const pct = Math.round(r.ref.discount * 100);
+            if (pct === 0) {
+              return `${label}: ${fmt(r.ref.primePrice)} – das war damals der normale Preis, kein Prime-Rabatt → 0 €`;
+            }
+            return `${label}: ${fmt(r.ref.primePrice)} statt ${fmt(r.ref.base)} (−${pct} %) → ca. −${fmt(r.saving)}${r.capped ? ' (höchstens bis auf den damaligen Prime-Preis)' : ''}`;
+          }).join('<br>');
+          const right = pe.high < 0.5 ? '<span class="s none">kaum Ersparnis</span>'
+            : pe.high - pe.low < 1 ? `<span class="s">−${fmt(pe.high)}</span>`
+            : `<span class="s">bis −${fmt(pe.high)}</span>`;
+          return `<li><span class="t" title="${esc(item.title)}">${esc(item.title)}</span>${right}<span class="p">${lines}${pe.bundle ? '<br>(Summe der Bündel-Teile)' : ''}</span></li>`;
         }).join('');
     }
   }
